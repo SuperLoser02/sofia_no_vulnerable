@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sofia_web
+    ports:
+      - "8080:80"
+    volumes:
+      - ./src:/var/www/html
+    depends_on:
+      - db
+    networks:
+      - sofia_network
+    environment:
+      - DB_HOST=db
+      - DB_NAME=sofias_demo
+      - DB_USER=admin
+      - DB_PASS=admin
+
+  db:
+    image: postgres:15
+    container_name: sofia_db
+    environment:
+      POSTGRES_DB: sofias_demo
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - sofia_network
+
+networks:
+  sofia_network:
+    driver: bridge
+
+volumes:
+  postgres_data:

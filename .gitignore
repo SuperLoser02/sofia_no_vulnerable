@@ -1,0 +1,40 @@
+# Ignorar archivos de sistema
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Variables de entorno
+.env
+.env.local
+
+# Directorios de datos de Docker
+postgres_data/
+
+# Archivos temporales
+*.tmp
+*.temp
+
+# Archivos de backup
+*.bak
+*.backup
+
+# IDE y editores
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Dependencias de Node.js (si se agregan más adelante)
+node_modules/
+npm-debug.log*
+
+# Archivos de PHP
+*.cache
+vendor/
+
+# Archivos de sistema de Windows
+desktop.ini
+$RECYCLE.BIN/
