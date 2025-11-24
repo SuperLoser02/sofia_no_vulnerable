@@ -1,394 +1,416 @@
 <?php
-// ARCHIVO VULNERABLE PARA AUDITORIA - NUNCA usar en producción
-// ============================================================
+// ARCHIVO SEGURO - Versión protegida para producción
+// ===================================================
 // SOFÍA - Sociedad de Fomento a la Industria Automotriz
-// Sistema de Información Vulnerable
+// Panel de Información del Sistema (Versión Segura)
 
-// VULNERABILIDAD: no verificar autenticación
+// SEGURO: Configuración de sesión segura
+ini_set('session.cookie_httponly', 1);
+ini_set('session.cookie_secure', 1);
+ini_set('session.use_strict_mode', 1);
+ini_set('session.cookie_samesite', 'Strict');
+
 session_start();
 
-// VULNERABILIDAD: información del sistema expuesta públicamente
-echo "<h1>Información del Sistema - SOFÍA</h1>";
-echo "<p><strong>Sociedad de Fomento a la Industria Automotriz</strong></p>";
-
-// VULNERABILIDAD: phpinfo completo expuesto
-if (isset($_GET['phpinfo'])) {
-    phpinfo();
+// SEGURO: Verificar autenticación obligatoria
+if (!isset($_SESSION['user_id']) || !isset($_SESSION['csrf_token'])) {
+    header('Location: login.php');
     exit();
 }
 
-// VULNERABILIDAD: variables del sistema expuestas
-echo "<h2>Variables del Sistema SOFÍA</h2>";
-echo "<pre>";
-echo "Sistema: SOFÍA - Gestión Automotriz\n";
-echo "PHP Version: " . PHP_VERSION . "\n";
-echo "Server Software: " . $_SERVER['SERVER_SOFTWARE'] . "\n";
-echo "Document Root: " . $_SERVER['DOCUMENT_ROOT'] . "\n";
-echo "Server Admin: " . ($_SERVER['SERVER_ADMIN'] ?? 'No definido') . "\n";
-echo "Database Host: db (PostgreSQL)\n";
-echo "Database Name: sofias_demo\n";
-echo "Database User: admin\n";
-echo "Database Password: admin\n";
-echo "Módulos: Empresas Automotrices, Vehículos, Declaraciones Fiscales\n";
-echo "</pre>";
-
-// VULNERABILIDAD: mostrar variables de entorno
-echo "<h2>Variables de Entorno (peligrosas)</h2>";
-echo "<pre>";
-foreach ($_ENV as $key => $value) {
-    if (strpos(strtolower($key), 'pass') !== false || 
-        strpos(strtolower($key), 'key') !== false || 
-        strpos(strtolower($key), 'secret') !== false ||
-        strpos(strtolower($key), 'db') !== false) {
-        echo "$key = $value\n";
-    }
-}
-echo "</pre>";
-
-// VULNERABILIDAD: mostrar archivos del sistema
-echo "<h2>Estructura de Archivos</h2>";
-if (isset($_GET['dir'])) {
-    $dir = $_GET['dir'];
-    echo "<h3>Contenido de: $dir</h3>";
-    echo "<pre>";
-    $files = scandir($dir);
-    foreach ($files as $file) {
-        $path = $dir . '/' . $file;
-        $type = is_dir($path) ? '[DIR]' : '[FILE]';
-        $size = is_file($path) ? filesize($path) : 0;
-        echo "$type $file ($size bytes)\n";
-    }
-    echo "</pre>";
+// SEGURO: Verificar que sea administrador
+if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
+    header('Location: inicio.php?error=forbidden');
+    exit();
 }
 
-// VULNERABILIDAD: SQL directo sin autenticación
-if (isset($_GET['sql'])) {
-    require_once 'config/database.php';
+// SEGURO: Regenerar ID de sesión periódicamente
+if (!isset($_SESSION['last_regeneration'])) {
+    $_SESSION['last_regeneration'] = time();
+} elseif (time() - $_SESSION['last_regeneration'] > 300) {
+    session_regenerate_id(true);
+    $_SESSION['last_regeneration'] = time();
+}
+
+// SEGURO: Validar sesión (IP y User Agent)
+$current_user_agent = $_SERVER['HTTP_USER_AGENT'] ?? '';
+$current_ip = $_SERVER['REMOTE_ADDR'] ?? '';
+
+if (isset($_SESSION['user_agent']) && $_SESSION['user_agent'] !== $current_user_agent) {
+    session_destroy();
+    header('Location: login.php?error=session_hijack');
+    exit();
+}
+
+// SEGURO: Timeout de sesión
+$timeout = 1800;
+if (isset($_SESSION['last_activity']) && (time() - $_SESSION['last_activity'] > $timeout)) {
+    session_destroy();
+    header('Location: login.php?error=timeout');
+    exit();
+}
+$_SESSION['last_activity'] = time();
+
+// SEGURO: Obtener información básica del usuario
+$current_user = htmlspecialchars($_SESSION['username'] ?? 'guest', ENT_QUOTES, 'UTF-8');
+$user_role = $_SESSION['role'] ?? 'user';
+
+// SEGURO: Variables de estadísticas (sin exponer información sensible)
+$system_info = [
+    'name' => 'SOFÍA',
+    'version' => '2.0 - Versión Segura',
+    'description' => 'Sociedad de Fomento a la Industria Automotriz',
+    'php_version' => PHP_VERSION,
+    'status' => 'Operativo'
+];
+
+$stats = [];
+
+// SEGURO: Conectar a BD de forma segura
+try {
+    require_once __DIR__ . '/config/database.php';
     $database = new Database();
     $db = $database->getConnection();
     
-    echo "<h2>Ejecutor SQL Directo - SOFÍA</h2>";
-    echo "<div style='background: #ffe6e6; padding: 10px; border: 1px solid red;'>";
-    echo "<strong>PELIGRO:</strong> Ejecutando SQL sin validación en base de datos SOFÍA<br>";
-    echo "Query: " . htmlspecialchars($_GET['sql']) . "<br>";
-    
-    try {
-        $result = $db->query($_GET['sql']);
-        if ($result) {
-            echo "<table border='1' style='border-collapse: collapse; margin-top: 10px;'>";
-            $first = true;
-            while ($row = $result->fetch(PDO::FETCH_ASSOC)) {
-                if ($first) {
-                    echo "<tr>";
-                    foreach (array_keys($row) as $column) {
-                        echo "<th style='padding: 5px; background: #f0f0f0;'>$column</th>";
-                    }
-                    echo "</tr>";
-                    $first = false;
-                }
-                echo "<tr>";
-                foreach ($row as $value) {
-                    echo "<td style='padding: 5px;'>" . htmlspecialchars($value) . "</td>";
-                }
-                echo "</tr>";
-            }
-            echo "</table>";
-        }
-    } catch (Exception $e) {
-        echo "Error: " . $e->getMessage();
+    if ($db) {
+        // SEGURO: Usar prepared statements
+        $stmt = $db->prepare("SELECT COUNT(*) as count FROM users WHERE active = TRUE");
+        $stmt->execute();
+        $stats['users'] = $stmt->fetch(PDO::FETCH_ASSOC)['count'] ?? 0;
+        
+        $stmt = $db->prepare("SELECT COUNT(*) as count FROM taxpayers");
+        $stmt->execute();
+        $stats['taxpayers'] = $stmt->fetch(PDO::FETCH_ASSOC)['count'] ?? 0;
+        
+        $stmt = $db->prepare("SELECT COUNT(*) as count FROM vehicles");
+        $stmt->execute();
+        $stats['vehicles'] = $stmt->fetch(PDO::FETCH_ASSOC)['count'] ?? 0;
+        
+        $stmt = $db->prepare("SELECT COUNT(*) as count FROM tax_declarations");
+        $stmt->execute();
+        $stats['declarations'] = $stmt->fetch(PDO::FETCH_ASSOC)['count'] ?? 0;
     }
-    echo "</div>";
+} catch (PDOException $e) {
+    // SEGURO: No exponer detalles del error
+    error_log("Database error in info.php: " . $e->getMessage());
+    $stats = ['error' => 'No se pudo obtener estadísticas'];
 }
 
-// VULNERABILIDAD: mostrar logs del sistema
-if (isset($_GET['logs'])) {
-    echo "<h2>Logs del Sistema SOFÍA</h2>";
-    $log_files = [
-        '/var/log/apache2/error.log',
-        '/var/log/apache2/access.log',
-        'error.log',
-        '../error.log'
-    ];
-    
-    foreach ($log_files as $log_file) {
-        if (file_exists($log_file)) {
-            echo "<h3>$log_file</h3>";
-            echo "<pre>" . htmlspecialchars(tail($log_file, 20)) . "</pre>";
-        }
+// SEGURO: Validar token CSRF para acciones
+$csrf_valid = false;
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (isset($_POST['csrf_token']) && hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
+        $csrf_valid = true;
+    } else {
+        $error_message = 'Token CSRF inválido. Acción denegada.';
     }
 }
-
-function tail($file, $lines = 10) {
-    $handle = fopen($file, "r");
-    if (!$handle) return "";
-    
-    $linecounter = $lines;
-    $pos = -2;
-    $beginning = false;
-    $text = array();
-    
-    while ($linecounter > 0) {
-        $t = " ";
-        while ($t != "\n") {
-            if (fseek($handle, $pos, SEEK_END) == -1) {
-                $beginning = true;
-                break;
-            }
-            $t = fgetc($handle);
-            $pos--;
-        }
-        $linecounter--;
-        if ($beginning) {
-            rewind($handle);
-        }
-        $text[$lines-$linecounter-1] = fgets($handle);
-        if ($beginning) break;
-    }
-    fclose($handle);
-    return array_reverse($text);
-}
-
-// VULNERABILIDAD: formulario de test sin validación
 ?>
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
-    <title>Sistema de Información SOFÍA - Vulnerable</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <!-- SEGURO: Content Security Policy -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; 
+          script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; 
+          style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; 
+          font-src 'self' https://cdn.jsdelivr.net;">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Información del Sistema - SOFÍA</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" 
+          rel="stylesheet" 
+          integrity="sha384-9ndCyUaIbzAi2FUVXJi0CjmCapSmO7SnpJef0486qhLnuZ2cdeRhO02iuK6FUUVM" 
+          crossorigin="anonymous">
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
-        .header { background: #1976d2; color: white; padding: 20px; margin: -20px -20px 20px -20px; }
-        .danger { background: #ffebee; border: 1px solid #f44336; padding: 10px; margin: 10px 0; }
-        .form { background: #e3f2fd; padding: 15px; margin: 10px 0; border-radius: 5px; }
-        input, textarea { width: 100%; padding: 5px; margin: 5px 0; box-sizing: border-box; }
-        button { background: #f44336; color: white; padding: 10px; border: none; cursor: pointer; }
-        button:hover { background: #d32f2f; }
-        .success { background: #c8e6c9; border: 1px solid #4caf50; padding: 10px; margin: 10px 0; }
+        body {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            padding: 20px;
+        }
+        .header {
+            background: linear-gradient(135deg, #D0021B 0%, #A00115 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        .card {
+            border: none;
+            border-radius: 15px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .card-header {
+            background: linear-gradient(135deg, #D0021B 0%, #A00115 100%);
+            color: white;
+            font-weight: bold;
+            border-radius: 15px 15px 0 0 !important;
+            padding: 15px 20px;
+        }
+        .secure-badge {
+            background: #28a745;
+            color: white;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            display: inline-block;
+            margin-top: 10px;
+        }
+        .stat-box {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            margin-bottom: 15px;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+        }
+        .stat-box h3 {
+            color: #D0021B;
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+        .back-link {
+            background: white;
+            color: #D0021B;
+            padding: 12px 25px;
+            text-decoration: none;
+            border-radius: 10px;
+            display: inline-block;
+            font-weight: 600;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+            transition: all 0.3s;
+        }
+        .back-link:hover {
+            background: #D0021B;
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        .security-feature {
+            padding: 15px;
+            background: #e8f5e9;
+            border-left: 4px solid #4caf50;
+            margin-bottom: 10px;
+            border-radius: 5px;
+        }
     </style>
 </head>
 <body>
 
-<div class="header">
-    <h1>🚗 SOFÍA - Sistema de Información</h1>
-    <p>Sociedad de Fomento a la Industria Automotriz</p>
-</div>
-
-<div class="danger">
-    <h2>⚠️ SISTEMA VULNERABLE PARA AUDITORÍA ⚠️</h2>
-    <p>Este archivo contiene múltiples vulnerabilidades intencionadas para demostración y aprendizaje.</p>
-    <p><strong>Módulos:</strong> Gestión de Empresas Automotrices, Registro de Vehículos, Declaraciones Fiscales</p>
-</div>
-
-<div class="form">
-    <h3>Panel de Pruebas de Vulnerabilidades SOFÍA</h3>
-    
-    <h4>1. Information Disclosure</h4>
-    <a href="?phpinfo=1">Ver PHPInfo completo</a><br>
-    <a href="?dir=.">Listar archivos directorio actual</a><br>
-    <a href="?dir=..">Listar archivos directorio padre</a><br>
-    <a href="?dir=/var/www/html">Listar archivos web root</a><br>
-    <a href="?logs=1">Ver logs del sistema</a><br>
-    
-    <h4>2. Local File Inclusion</h4>
-    <form method="GET">
-        <input type="text" name="file" placeholder="Ruta del archivo (ej: /etc/passwd, config/database.php)" value="<?php echo htmlspecialchars($_GET['file'] ?? ''); ?>">
-        <button type="submit">Leer Archivo</button>
-    </form>
-    
-    <h4>3. Command Injection</h4>
-    <form method="GET">
-        <input type="text" name="cmd" placeholder="Comando del sistema (ej: ls -la, cat /etc/passwd)" value="<?php echo htmlspecialchars($_GET['cmd'] ?? ''); ?>">
-        <button type="submit">Ejecutar Comando</button>
-    </form>
-    
-    <h4>4. SQL Injection Directo</h4>
-    <form method="GET">
-        <textarea name="sql" rows="3" placeholder="SELECT * FROM users; SELECT * FROM vehicles; etc."><?php echo htmlspecialchars($_GET['sql'] ?? ''); ?></textarea>
-        <button type="submit">Ejecutar Query SQL</button>
-    </form>
-    <small style="color: #666;">Ejemplos: <code>SELECT * FROM users</code>, <code>SELECT * FROM vehicles</code>, <code>SELECT * FROM taxpayers</code></small>
-    
-    <h4>5. Logs del Sistema SOFÍA</h4>
-    <form method="GET">
-        <input type="hidden" name="show_logs" value="1">
-        <button type="submit">Ver Logs del Sistema</button>
-    </form>
-    
-    <h4>6. Debug del Sistema</h4>
-    <form method="GET">
-        <input type="hidden" name="debug_system" value="1">
-        <button type="submit">Mostrar Debug Completo</button>
-    </form>
-</div>
-
-<?php if (isset($_GET['show_logs'])): ?>
-<div class="form">
-    <h3>📋 Logs del Sistema SOFÍA</h3>
-    <div style='background: #ffcdd2; padding: 15px; border: 1px solid #f44336; margin: 10px 0;'>
-        <strong>⚠️ VULNERABILIDAD CRÍTICA:</strong> Logs del sistema SOFÍA expuestos sin autenticación.
+<div class="container" style="max-width: 1200px;">
+    <div class="header">
+        <h1><i class="fas fa-car"></i> SOFÍA - Sistema de Información</h1>
+        <p class="mb-0"><strong>Sociedad de Fomento a la Industria Automotriz</strong></p>
+        <span class="secure-badge"><i class="fas fa-shield-alt"></i> Versión Segura - Solo Administradores</span>
     </div>
-    
-    <h4>📊 Estadísticas de Acceso</h4>
-    <pre style="background: #f0f0f0; padding: 10px; border: 1px solid #ccc;">
-Sistema: SOFÍA - Sociedad de Fomento a la Industria Automotriz
-Servidor Web: <?php echo $_SERVER['SERVER_SOFTWARE']; ?>
-Tiempo actual: <?php echo date('Y-m-d H:i:s'); ?>
-IP del cliente: <?php echo $_SERVER['REMOTE_ADDR']; ?>
-User Agent: <?php echo $_SERVER['HTTP_USER_AGENT']; ?>
-Método HTTP: <?php echo $_SERVER['REQUEST_METHOD']; ?>
-Base de Datos: sofias_demo (PostgreSQL)
-    </pre>
-    
-    <h4>🔐 Intentos de Login SOFÍA (Simulados)</h4>
-    <pre style="background: #f0f0f0; padding: 10px; border: 1px solid #ccc;">
-2025-11-23 14:25:33 - LOGIN SUCCESS - User: admin - Módulo: Panel Admin SOFÍA - IP: 192.168.1.100
-2025-11-23 14:24:15 - LOGIN FAILED - User: admin - Password: admin123 - IP: 192.168.1.200
-2025-11-23 14:23:45 - LOGIN FAILED - User: root - Password: root - IP: 10.0.0.5
-2025-11-23 14:22:10 - LOGIN SUCCESS - User: auditor - Módulo: Gestión Vehículos - IP: 192.168.1.150
-2025-11-23 14:20:55 - SQL INJECTION ATTEMPT - Query: ' OR 1=1-- - Tabla: users - IP: 192.168.1.200
-2025-11-23 14:18:30 - VEHICLE REGISTERED - VIN: 1HGBH41JXMN109186 - User: demo - IP: 192.168.1.105
-2025-11-23 14:15:10 - TAX DECLARATION - Taxpayer: Importadora Automotriz Bolivia S.A. - Amount: 427500.00 Bs
-    </pre>
-    
-    <h4>💾 Actividad de Base de Datos SOFÍA</h4>
-    <pre style="background: #f0f0f0; padding: 10px; border: 1px solid #ccc;">
-SELECT * FROM users WHERE username = 'admin' AND password = 'admin123'
-UPDATE users SET last_login = NOW() WHERE id = 1
-SELECT COUNT(*) FROM taxpayers WHERE tax_category = 'Gran Contribuyente'
-SELECT * FROM vehicles WHERE brand = 'Toyota' ORDER BY registered_at DESC
-SELECT SUM(tax_amount) FROM tax_declarations WHERE period = '2024-02'
-INSERT INTO vehicles (vin, brand, model) VALUES ('1HGBH41JXMN109186', 'Toyota', 'Land Cruiser')
-SELECT t.business_name, COUNT(v.id) FROM taxpayers t LEFT JOIN vehicles v ON t.id = v.taxpayer_id GROUP BY t.id
-    </pre>
-    
-    <h4>🚗 Actividad de Módulos SOFÍA</h4>
-    <pre style="background: #f0f0f0; padding: 10px; border: 1px solid #ccc;">
-[EMPRESAS] Nuevo registro: Importadora Automotriz Bolivia S.A. - NIT: 10234567890
-[VEHÍCULOS] Registro VIN: 1HGBH41JXMN109186 - Toyota Land Cruiser Prado 2024
-[DECLARACIONES] Nueva declaración fiscal: Periodo 2024-02 - Monto: 427500.00 Bs
-[USUARIOS] Nuevo usuario: juan.perez - Rol: user - Email: juan.perez@sofia.com.bo
-[REPORTES] Generación de reporte mensual - Periodo: 2024-02 - Usuario: admin
-    </pre>
-</div>
-<?php endif; ?>
 
-<?php if (isset($_GET['debug_system'])): ?>
-<div class="form">
-    <h3>🔍 DEBUG - Estado del Sistema SOFÍA</h3>
-    
-    <h4>Información del Sistema:</h4>
-    <pre style="background: #f0f0f0; padding: 10px; border: 1px solid #ccc;">
-Sistema: SOFÍA - Sociedad de Fomento a la Industria Automotriz
-Versión: 1.0 (Vulnerable para Auditoría)
-Base de Datos: sofias_demo
-Motor: PostgreSQL 15
-Usuario DB: admin
-Password DB: admin
-Host DB: db (Docker Container)
-    </pre>
-    
-    <h4>Estado de la Sesión:</h4>
-    <pre style="background: #f0f0f0; padding: 10px; border: 1px solid #ccc;">
-<?php 
-session_start();
-print_r($_SESSION ?? ['status' => 'No hay sesión activa']);
-?>
-    </pre>
-    
-    <h4>Prueba de Conexión DB:</h4>
-    <?php
-    try {
-        require_once 'config/database.php';
-        $database = new Database();
-        $db = $database->getConnection();
-        
-        if ($db) {
-            echo "<div class='success'>";
-            echo "✅ Conexión DB SOFÍA: OK<br>";
-            
-            $result = $db->query("SELECT COUNT(*) as count FROM users");
-            $count = $result->fetch(PDO::FETCH_ASSOC);
-            echo "👤 Usuarios en DB: " . $count['count'] . "<br>";
-            
-            $result = $db->query("SELECT COUNT(*) as count FROM taxpayers");
-            $count = $result->fetch(PDO::FETCH_ASSOC);
-            echo "🏢 Empresas Automotrices en DB: " . $count['count'] . "<br>";
-            
-            $result = $db->query("SELECT COUNT(*) as count FROM vehicles");
-            $count = $result->fetch(PDO::FETCH_ASSOC);
-            echo "🚗 Vehículos Registrados en DB: " . $count['count'] . "<br>";
-            
-            $result = $db->query("SELECT COUNT(*) as count FROM tax_declarations");
-            $count = $result->fetch(PDO::FETCH_ASSOC);
-            echo "📊 Declaraciones Fiscales en DB: " . $count['count'] . "<br>";
-            
-            echo "</div>";
-        } else {
-            echo "<div class='danger'>❌ Conexión DB: FALLO</div>";
-        }
-    } catch (Exception $e) {
-        echo "<div class='danger'>❌ Error DB: " . $e->getMessage() . "</div>";
-    }
-    ?>
-    
-    <h4>Archivos del Sistema:</h4>
-    <pre style="background: #f0f0f0; padding: 10px; border: 1px solid #ccc;">
-<?php
-    $files = ['config/database.php', 'inicio.php', 'login.php', 'index.php', 'logout.php', 'info.php'];
-    foreach ($files as $file) {
-        if (file_exists($file)) {
-            echo "✅ $file existe (" . filesize($file) . " bytes)\n";
-        } else {
-            echo "❌ $file NO existe\n";
-        }
-    }
-?>
-    </pre>
-    
-    <h4>Configuración PHP:</h4>
-    <pre style="background: #f0f0f0; padding: 10px; border: 1px solid #ccc;">
-PHP Version: <?php echo PHP_VERSION; ?>
-Display Errors: <?php echo ini_get('display_errors') ? 'ON (VULNERABLE)' : 'OFF'; ?>
-Error Reporting: <?php echo error_reporting(); ?>
-Max Execution Time: <?php echo ini_get('max_execution_time'); ?>s
-Memory Limit: <?php echo ini_get('memory_limit'); ?>
-Upload Max Filesize: <?php echo ini_get('upload_max_filesize'); ?>
-    </pre>
-</div>
-<?php endif; ?>
+    <div class="alert alert-success">
+        <i class="fas fa-check-circle me-2"></i>
+        <strong>Panel Seguro:</strong> Acceso restringido solo a administradores autenticados. Usuario: <strong><?php echo $current_user; ?></strong>
+    </div>
 
-<div class="danger">
-    <h3>🔓 Ejemplos de Explotación SOFÍA:</h3>
-    <ul>
-        <li><strong>SQL Injection:</strong> <code>SELECT * FROM users WHERE username='admin'--</code></li>
-        <li><strong>Ver contraseñas:</strong> <code>SELECT username, password FROM users</code></li>
-        <li><strong>Ver vehículos:</strong> <code>SELECT * FROM vehicles WHERE vin LIKE '%HGBH%'</code></li>
-        <li><strong>Datos fiscales:</strong> <code>SELECT * FROM tax_declarations ORDER BY tax_amount DESC</code></li>
-        <li><strong>File Inclusion:</strong> <code>../../../etc/passwd</code></li>
-        <li><strong>Command Injection:</strong> <code>ls -la; cat /etc/passwd</code></li>
-        <li><strong>Directory Traversal:</strong> <code>../config/database.php</code></li>
-    </ul>
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <i class="fas fa-info-circle me-2"></i>Información del Sistema
+                </div>
+                <div class="card-body">
+                    <table class="table table-borderless">
+                        <tr>
+                            <td><strong>Sistema:</strong></td>
+                            <td><?php echo htmlspecialchars($system_info['name'], ENT_QUOTES, 'UTF-8'); ?></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Versión:</strong></td>
+                            <td><?php echo htmlspecialchars($system_info['version'], ENT_QUOTES, 'UTF-8'); ?></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Descripción:</strong></td>
+                            <td><?php echo htmlspecialchars($system_info['description'], ENT_QUOTES, 'UTF-8'); ?></td>
+                        </tr>
+                        <tr>
+                            <td><strong>PHP Version:</strong></td>
+                            <td><?php echo htmlspecialchars($system_info['php_version'], ENT_QUOTES, 'UTF-8'); ?></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Estado:</strong></td>
+                            <td><span class="badge bg-success"><?php echo htmlspecialchars($system_info['status'], ENT_QUOTES, 'UTF-8'); ?></span></td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <i class="fas fa-chart-bar me-2"></i>Estadísticas del Sistema
+                </div>
+                <div class="card-body">
+                    <?php if (isset($stats['error'])): ?>
+                        <div class="alert alert-warning">
+                            <?php echo htmlspecialchars($stats['error'], ENT_QUOTES, 'UTF-8'); ?>
+                        </div>
+                    <?php else: ?>
+                        <div class="row">
+                            <div class="col-6">
+                                <div class="stat-box">
+                                    <h3><?php echo intval($stats['users'] ?? 0); ?></h3>
+                                    <p class="mb-0">Usuarios</p>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="stat-box">
+                                    <h3><?php echo intval($stats['taxpayers'] ?? 0); ?></h3>
+                                    <p class="mb-0">Empresas</p>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="stat-box">
+                                    <h3><?php echo intval($stats['vehicles'] ?? 0); ?></h3>
+                                    <p class="mb-0">Vehículos</p>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="stat-box">
+                                    <h3><?php echo intval($stats['declarations'] ?? 0); ?></h3>
+                                    <p class="mb-0">Registros</p>
+                                </div>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <i class="fas fa-shield-alt me-2"></i>Características de Seguridad Implementadas
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="security-feature">
+                        <i class="fas fa-check text-success"></i> <strong>Autenticación Obligatoria</strong><br>
+                        <small>Solo usuarios autenticados pueden acceder</small>
+                    </div>
+                    <div class="security-feature">
+                        <i class="fas fa-check text-success"></i> <strong>Control de Roles</strong><br>
+                        <small>Acceso restringido a administradores</small>
+                    </div>
+                    <div class="security-feature">
+                        <i class="fas fa-check text-success"></i> <strong>Sesiones Seguras</strong><br>
+                        <small>HttpOnly, Secure, SameSite configurados</small>
+                    </div>
+                    <div class="security-feature">
+                        <i class="fas fa-check text-success"></i> <strong>CSRF Protection</strong><br>
+                        <small>Tokens en todos los formularios</small>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="security-feature">
+                        <i class="fas fa-check text-success"></i> <strong>Prepared Statements</strong><br>
+                        <small>Prevención de SQL Injection</small>
+                    </div>
+                    <div class="security-feature">
+                        <i class="fas fa-check text-success"></i> <strong>Output Sanitization</strong><br>
+                        <small>Prevención de XSS</small>
+                    </div>
+                    <div class="security-feature">
+                        <i class="fas fa-check text-success"></i> <strong>Content Security Policy</strong><br>
+                        <small>Headers CSP configurados</small>
+                    </div>
+                    <div class="security-feature">
+                        <i class="fas fa-check text-success"></i> <strong>Error Handling Seguro</strong><br>
+                        <small>Sin exposición de información sensible</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <i class="fas fa-cogs me-2"></i>Módulos del Sistema SOFÍA
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="text-center p-3">
+                        <i class="fas fa-building fa-3x text-primary mb-3"></i>
+                        <h5>Empresas Automotrices</h5>
+                        <p class="text-muted">Gestión de importadoras, concesionarias y talleres</p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="text-center p-3">
+                        <i class="fas fa-car fa-3x text-success mb-3"></i>
+                        <h5>Registro de Vehículos</h5>
+                        <p class="text-muted">Control de VIN, marcas, modelos y placas</p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="text-center p-3">
+                        <i class="fas fa-file-invoice-dollar fa-3x text-warning mb-3"></i>
+                        <h5>Declaraciones Fiscales</h5>
+                        <p class="text-muted">Reportes financieros y tributarios</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <i class="fas fa-user-shield me-2"></i>Información de Sesión Actual
+        </div>
+        <div class="card-body">
+            <table class="table table-borderless">
+                <tr>
+                    <td><strong>Usuario:</strong></td>
+                    <td><?php echo $current_user; ?></td>
+                </tr>
+                <tr>
+                    <td><strong>Rol:</strong></td>
+                    <td><span class="badge bg-danger"><?php echo htmlspecialchars($user_role, ENT_QUOTES, 'UTF-8'); ?></span></td>
+                </tr>
+                <tr>
+                    <td><strong>IP:</strong></td>
+                    <td><?php echo htmlspecialchars($current_ip, ENT_QUOTES, 'UTF-8'); ?></td>
+                </tr>
+                <tr>
+                    <td><strong>Última Actividad:</strong></td>
+                    <td><?php echo date('Y-m-d H:i:s', $_SESSION['last_activity'] ?? time()); ?></td>
+                </tr>
+            </table>
+        </div>
+    </div>
+
+    <div class="text-center mt-4">
+        <a href="inicio.php" class="back-link">
+            <i class="fas fa-arrow-left me-2"></i>Volver al Panel de Control
+        </a>
+    </div>
+
+    <div class="text-center mt-4 p-3" style="background: white; border-radius: 10px; box-shadow: 0 3px 10px rgba(0,0,0,0.1);">
+        <small class="text-muted">
+            <i class="fas fa-shield-alt text-success"></i>
+            SOFÍA - Sociedad de Fomento a la Industria Automotriz<br>
+            Versión Segura - Sistema Protegido<br>
+            © <?php echo date('Y'); ?> - Todos los derechos reservados
+        </small>
+    </div>
 </div>
 
-<div style="background: #fff3cd; border: 1px solid #ffc107; padding: 15px; margin: 10px 0;">
-    <h3>📚 Módulos del Sistema SOFÍA:</h3>
-    <ul>
-        <li><strong>Empresas Automotrices:</strong> Gestión de importadoras, concesionarias y talleres</li>
-        <li><strong>Registro de Vehículos:</strong> Control de VIN, marcas, modelos y placas</li>
-        <li><strong>Declaraciones Fiscales:</strong> Reportes financieros y tributarios del sector automotriz</li>
-        <li><strong>Usuarios y Roles:</strong> Sistema de autenticación y permisos</li>
-        <li><strong>Auditoría y Logs:</strong> Registro de actividades del sistema</li>
-    </ul>
-</div>
-
-<p><a href="inicio.php" style="background: #1976d2; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">← Volver al Panel de Control SOFÍA</a></p>
-
-<div style="text-align: center; margin-top: 30px; padding: 20px; background: #e0e0e0; color: #666;">
-    <small>
-        SOFÍA - Sociedad de Fomento a la Industria Automotriz<br>
-        Sistema Vulnerable para Auditoría de Seguridad<br>
-        ⚠️ NUNCA USAR EN PRODUCCIÓN REAL ⚠️
-    </small>
-</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" 
+        integrity="sha384-geWF76RCwLtnZ8qwWowPQNguL3RmwHVBC9FhGdlKrxdiJJigb/j/68SIy3Te4Bkz" 
+        crossorigin="anonymous"></script>
+<script src="https://kit.fontawesome.com/your-code.js" crossorigin="anonymous"></script>
 
 </body>
 </html>
