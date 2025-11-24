@@ -5,7 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: sofia_web
+    container_name: sofia_web_seguro
     ports:
       - "8080:80"
     volumes:
@@ -22,7 +22,7 @@ services:
 
   db:
     image: postgres:15
-    container_name: sofia_db
+    container_name: sofia_db_seguro
     environment:
       POSTGRES_DB: sofias_demo
       POSTGRES_USER: admin
